@@ -1,0 +1,145 @@
+"""
+CamPost Crawler — 첨부파일 다운로드 및 텍스트 추출
+PDF  : pdfplumber
+HWP  : olefile (PrvText 스트림)
+HWPX : zipfile + XML 파싱
+기타 : 다운로드만, 텍스트 추출 생략
+"""
+
+import logging
+import re
+import zipfile
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+import httpx
+
+from .config import FILES_DIR, EXTRACTABLE_EXTS, USER_AGENT
+
+log = logging.getLogger("campost.file_handler")
+
+
+# ── 파일명 정제 ──────────────────────────────────────────
+
+def _safe_filename(article_id: str, name: str) -> str:
+    """파일명에서 경로 조작 문자 제거 후 article_id 접두사 부여"""
+    safe = re.sub(r'[\\/*?:"<>|]', "_", name).strip()
+    return f"{article_id}_{safe}"
+
+
+# ── 다운로드 ─────────────────────────────────────────────
+
+async def download_file(url: str, save_path: Path) -> bool:
+    """httpx로 파일 다운로드. 성공 시 True 반환."""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            save_path.write_bytes(resp.content)
+            log.debug(f"다운로드 완료: {save_path.name} ({len(resp.content):,} bytes)")
+            return True
+    except Exception as exc:
+        log.warning(f"다운로드 실패 ({save_path.name}): {exc}")
+        return False
+
+
+# ── 텍스트 추출 ──────────────────────────────────────────
+
+def _extract_pdf(path: Path) -> str:
+    try:
+        import pdfplumber
+        texts = []
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    texts.append(t)
+        return "\n".join(texts).strip()
+    except Exception as exc:
+        log.warning(f"PDF 파싱 실패 ({path.name}): {exc}")
+        return ""
+
+
+def _extract_hwp(path: Path) -> str:
+    """olefile로 HWP PrvText 스트림(UTF-16LE 평문) 추출"""
+    try:
+        import olefile
+        ole = olefile.OleFileIO(str(path))
+        if ole.exists("PrvText"):
+            raw = ole.openstream("PrvText").read()
+            return raw.decode("utf-16-le", errors="ignore").strip()
+        log.warning(f"HWP PrvText 스트림 없음: {path.name}")
+        return ""
+    except Exception as exc:
+        log.warning(f"HWP 파싱 실패 ({path.name}): {exc}")
+        return ""
+
+
+def _extract_hwpx(path: Path) -> str:
+    """HWPX(ZIP+XML) 에서 텍스트 추출"""
+    try:
+        texts = []
+        with zipfile.ZipFile(path) as z:
+            section_files = sorted(
+                [n for n in z.namelist()
+                 if n.startswith("Contents/section") and n.endswith(".xml")]
+            )
+            for section in section_files:
+                with z.open(section) as f:
+                    tree = ET.parse(f)
+                    # 한글 HWPX 네임스페이스
+                    ns = {"hp": "http://www.hancom.co.kr/hwpml/2012/paragraph"}
+                    for t in tree.findall(".//hp:t", ns):
+                        if t.text:
+                            texts.append(t.text)
+        return "\n".join(texts).strip()
+    except Exception as exc:
+        log.warning(f"HWPX 파싱 실패 ({path.name}): {exc}")
+        return ""
+
+
+def extract_text(path: Path, ext: str) -> str:
+    if ext == "pdf":
+        return _extract_pdf(path)
+    if ext == "hwp":
+        return _extract_hwp(path)
+    if ext == "hwpx":
+        return _extract_hwpx(path)
+    return ""
+
+
+# ── 통합 처리 ────────────────────────────────────────────
+
+async def process_attachments(attachments: list[dict], article_id: str) -> list[dict]:
+    """
+    각 첨부파일을 다운로드하고 텍스트를 추출하여 반환.
+
+    추가되는 필드:
+        local_path     : data/files/ 기준 상대 경로 (서빙용)
+        extracted_text : 추출된 텍스트 (AI 요약 입력값)
+        download_ok    : 다운로드 성공 여부
+    """
+    results = []
+    for att in attachments:
+        filename = _safe_filename(article_id, att["name"])
+        save_path = FILES_DIR / filename
+
+        download_ok = await download_file(att["url"], save_path)
+
+        extracted_text = ""
+        if download_ok and att["ext"] in EXTRACTABLE_EXTS:
+            extracted_text = extract_text(save_path, att["ext"])
+            log.info(
+                f"  텍스트 추출 [{att['ext'].upper()}] {att['name'][:30]} "
+                f"→ {len(extracted_text)}자"
+            )
+
+        results.append({
+            **att,
+            "local_path": f"files/{filename}",
+            "extracted_text": extracted_text,
+            "download_ok": download_ok,
+        })
+
+    return results
