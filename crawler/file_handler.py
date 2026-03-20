@@ -6,7 +6,9 @@ HWPX : zipfile + XML 파싱
 기타 : 다운로드만, 텍스트 추출 생략
 """
 
+import hashlib
 import logging
+import mimetypes
 import re
 import zipfile
 from pathlib import Path
@@ -15,6 +17,10 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from .config import FILES_DIR, EXTRACTABLE_EXTS, USER_AGENT
+
+# HWP/HWPX는 mimetypes 표준에 없으므로 직접 등록
+mimetypes.add_type("application/x-hwp", ".hwp")
+mimetypes.add_type("application/x-hwpx", ".hwpx")
 
 log = logging.getLogger("campost.file_handler")
 
@@ -25,6 +31,23 @@ def _safe_filename(article_id: str, name: str) -> str:
     """파일명에서 경로 조작 문자 제거 후 article_id 접두사 부여"""
     safe = re.sub(r'[\\/*?:"<>|]', "_", name).strip()
     return f"{article_id}_{safe}"
+
+
+# ── 파일 메타데이터 ───────────────────────────────────────
+
+def _compute_checksum(path: Path) -> str:
+    """파일 SHA-256 체크섬 계산 (64자 hex 문자열)"""
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def _get_mime_type(filename: str) -> str:
+    """파일명 기반 MIME 타입 반환"""
+    mime, _ = mimetypes.guess_type(filename)
+    return mime or "application/octet-stream"
 
 
 # ── 다운로드 ─────────────────────────────────────────────
@@ -135,9 +158,18 @@ async def process_attachments(attachments: list[dict], article_id: str) -> list[
                 f"→ {len(extracted_text)}자"
             )
 
+        file_key = filename
+        checksum = _compute_checksum(save_path) if download_ok else None
+        file_size = save_path.stat().st_size if download_ok else None
+        mime_type = _get_mime_type(att["name"])
+
         results.append({
             **att,
+            "file_key": file_key,
             "local_path": f"files/{filename}",
+            "mime_type": mime_type,
+            "file_size": file_size,
+            "checksum": checksum,
             "extracted_text": extracted_text,
             "download_ok": download_ok,
         })

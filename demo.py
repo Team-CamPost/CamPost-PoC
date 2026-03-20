@@ -7,8 +7,9 @@ CamPost Demo Server
 
 import json
 import mimetypes
+import urllib.parse
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 
@@ -16,7 +17,7 @@ from urllib.parse import urlparse, unquote
 BASE_DIR     = Path(__file__).resolve().parent
 NOTICES_FILE = BASE_DIR / "data" / "collected_notices.json"
 FILES_DIR    = BASE_DIR / "data" / "files"
-PORT = 8282
+PORT = 9090
 
 CONTENT_TYPES = {
     ".pdf":  "application/pdf",
@@ -71,12 +72,15 @@ class Handler(BaseHTTPRequestHandler):
         content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
         data = file_path.read_bytes()
 
+        # 한글 파일명 RFC 5987 인코딩 (브라우저 파일명 깨짐 방지)
+        encoded_name = urllib.parse.quote(safe_name)
+
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header(
             "Content-Disposition",
-            f'attachment; filename="{safe_name}"'
+            f"attachment; filename*=UTF-8''{encoded_name}"
         )
         self.end_headers()
         self.wfile.write(data)
@@ -90,4 +94,4 @@ if __name__ == "__main__":
     print(f"CamPost 데모 서버 시작: {url}")
     print("종료: Ctrl+C\n")
     webbrowser.open(url)
-    HTTPServer(("", PORT), Handler).serve_forever()
+    ThreadingHTTPServer(("", PORT), Handler).serve_forever()

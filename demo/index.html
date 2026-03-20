@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CamPost Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+      background: #f5f6fa;
+      color: #222;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a56db;
+      color: #fff;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header span { font-size: 0.9rem; opacity: 0.8; }
+
+    .container { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+
+    .summary {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      border-left: 4px solid #1a56db;
+      font-size: 0.95rem;
+      color: #444;
+    }
+
+    .notice-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      transition: box-shadow 0.15s;
+    }
+    .notice-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.12); }
+
+    .notice-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .badge-pinned {
+      flex-shrink: 0;
+      background: #1a56db;
+      color: #fff;
+      font-size: 0.72rem;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-top: 3px;
+    }
+    .notice-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .notice-title a {
+      color: #1a1a2e;
+      text-decoration: none;
+    }
+    .notice-title a:hover { color: #1a56db; text-decoration: underline; }
+
+    .notice-meta {
+      font-size: 0.83rem;
+      color: #888;
+      margin-bottom: 10px;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .notice-meta span::before { margin-right: 4px; }
+
+    .notice-body {
+      font-size: 0.88rem;
+      color: #555;
+      line-height: 1.6;
+      background: #f9fafb;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .attachments { display: flex; flex-direction: column; gap: 6px; }
+    .att-label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 2px;
+    }
+    .att-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      border-radius: 5px;
+      border: 1px solid #d1d9e0;
+      background: #f0f4ff;
+      font-size: 0.84rem;
+      color: #1a3a7a;
+      text-decoration: none;
+      width: fit-content;
+      transition: background 0.12s;
+    }
+    .att-item:hover { background: #dce9ff; }
+    .att-icon { font-size: 1rem; }
+
+    .empty { text-align: center; padding: 60px; color: #aaa; font-size: 1rem; }
+    .loading { text-align: center; padding: 60px; color: #888; }
+
+    .source-link {
+      display: inline-block;
+      margin-top: 10px;
+      font-size: 0.8rem;
+      color: #888;
+      text-decoration: none;
+    }
+    .source-link:hover { color: #1a56db; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>📋 CamPost Demo</h1>
+      <span>단국대 SW학과 공지사항 수집 결과</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="summary" id="summary">데이터를 불러오는 중...</div>
+    <div id="notices-container"><div class="loading">⏳ 공지사항을 불러오는 중입니다...</div></div>
+  </div>
+
+  <script>
+    const EXT_ICON = {
+      pdf: '📄', hwp: '📝', hwpx: '📝', zip: '🗜️',
+      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', default: '📎'
+    };
+
+    function extIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      return EXT_ICON[ext] || EXT_ICON.default;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes) return '';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    function renderNotice(n) {
+      const atts = n.attachments || [];
+      const attHTML = atts.length === 0 ? '' : `
+        <div class="attachments">
+          <div class="att-label">📎 첨부파일 ${atts.length}개</div>
+          ${atts.map(a => {
+            const localPath = a.local_path || '';
+            const fileKey   = a.file_key  || (localPath.replace(/^files\//, ''));
+            const dlUrl     = fileKey ? `/files/${encodeURIComponent(fileKey)}` : '#';
+            const size      = a.file_size ? ` (${formatSize(a.file_size)})` : '';
+            const ok        = a.download_ok !== false;
+            return ok
+              ? `<a class="att-item" href="${dlUrl}" download="${a.name || fileKey}">
+                   <span class="att-icon">${extIcon(a.name || fileKey)}</span>
+                   ${a.name || fileKey}${size}
+                 </a>`
+              : `<span class="att-item" style="opacity:.5;cursor:default">
+                   ⚠️ ${a.name || fileKey} (다운로드 실패)
+                 </span>`;
+          }).join('')}
+        </div>`;
+
+      const bodyPreview = (n.body_text || '').trim().substring(0, 300);
+
+      return `
+        <div class="notice-card">
+          <div class="notice-header">
+            ${n.is_pinned ? '<span class="badge-pinned">고정</span>' : ''}
+            <div class="notice-title">
+              <a href="${n.source_url || '#'}" target="_blank" rel="noopener">
+                ${n.title || '(제목 없음)'}
+              </a>
+            </div>
+          </div>
+          <div class="notice-meta">
+            <span>📅 ${n.date || '날짜 없음'}</span>
+            <span>✍️ ${n.author || '작성자 없음'}</span>
+            ${n.category ? `<span>🏷️ ${n.category}</span>` : ''}
+            <span>👁️ ${n.views || '0'}</span>
+          </div>
+          ${bodyPreview ? `<div class="notice-body">${bodyPreview}${(n.body_text||'').length > 300 ? '\n...' : ''}</div>` : ''}
+          ${attHTML}
+          <a class="source-link" href="${n.source_url || '#'}" target="_blank" rel="noopener">
+            🔗 원문 보기 (단국대 홈페이지)
+          </a>
+        </div>`;
+    }
+
+    fetch('/api/notices')
+      .then(res => res.json())
+      .then(data => {
+        const container = document.getElementById('notices-container');
+        const summary   = document.getElementById('summary');
+
+        if (!data || data.length === 0) {
+          summary.textContent = '수집된 공지사항이 없습니다.';
+          container.innerHTML = '<div class="empty">📭 아직 수집된 공지사항이 없습니다.<br>크롤러를 실행해주세요.</div>';
+          return;
+        }
+
+        const totalAtt = data.reduce((s, n) => s + (n.attachments || []).length, 0);
+        summary.innerHTML = `공지사항 <strong>${data.length}건</strong> 수집됨 &nbsp;|&nbsp; 첨부파일 <strong>${totalAtt}개</strong> 다운로드 완료`;
+
+        container.innerHTML = data
+          .sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0))
+          .map(renderNotice)
+          .join('');
+      })
+      .catch(err => {
+        document.getElementById('summary').textContent = '데이터 로드 실패';
+        document.getElementById('notices-container').innerHTML =
+          '<div class="empty">❌ 데이터를 불러오는데 실패했습니다.<br><small>' + err.message + '</small></div>';
+      });
+  </script>
+</body>
+</html>

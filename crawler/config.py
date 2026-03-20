@@ -48,6 +48,12 @@ FILES_DIR.mkdir(parents=True, exist_ok=True)
 # 텍스트 추출 대상 확장자
 EXTRACTABLE_EXTS = {"pdf", "hwp", "hwpx"}
 
+# ── 데이터베이스 ─────────────────────────────────────────
+DB_DSN: str = os.getenv(
+    "DATABASE_URL",
+    "postgresql://campost:campost@localhost:5432/campost",
+)
+
 # ── DOM 셀렉터 (PoC 검증 완료) ───────────────────────────
 SELECTORS = {
     "list_item": ".dku-list-body-item:not(.header)",

@@ -23,7 +23,10 @@ from crawler.storage import (
     load_seen_hashes,
     save_seen_hashes,
     save_notices,
+    save_notice_to_db,
+    save_attachment_to_db,
 )
+from db.database import init_pool, close_pool, get_pool
 
 # ── 로거 설정 ────────────────────────────────────────────
 logging.basicConfig(
@@ -100,12 +103,32 @@ async def run_crawler() -> None:
     save_seen_hashes(seen_hashes)
 
     if collected:
-        save_notices(collected)
+        save_notices(collected)          # JSON 백업
+        await _save_to_db(collected)     # PostgreSQL
         _print_preview(collected)
     else:
         log.info(f"신규 게시글 없음 (건너뜀 {skip_count}건)")
 
     log.info("크롤링 완료")
+
+
+async def _save_to_db(notices: list[dict]) -> None:
+    """수집된 공지사항 목록을 PostgreSQL에 저장"""
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        log.warning("DB 풀 미초기화 — PostgreSQL 저장 건너뜀")
+        return
+
+    for notice in notices:
+        notice_id = await save_notice_to_db(pool, notice)
+        if notice_id is None:
+            continue
+        for att in notice.get("attachments", []):
+            if att.get("download_ok") and att.get("file_key"):
+                await save_attachment_to_db(pool, notice_id, att)
+
+    log.info(f"DB 저장 완료: {len(notices)}건")
 
 
 def _print_preview(notices: list[dict]) -> None:
@@ -124,6 +147,13 @@ def _print_preview(notices: list[dict]) -> None:
 # ── 스케줄러 진입점 ──────────────────────────────────────
 
 async def main() -> None:
+    # DB 풀 초기화
+    try:
+        await init_pool()
+        log.info("PostgreSQL 연결 풀 초기화 완료")
+    except Exception as exc:
+        log.warning(f"PostgreSQL 연결 실패 ({exc}) — JSON 모드로 계속 진행")
+
     # 즉시 1회 실행
     await run_crawler()
 
@@ -145,6 +175,7 @@ async def main() -> None:
             await asyncio.sleep(3600)
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
+        await close_pool()
         log.info("스케줄러 정상 종료")
 
 
