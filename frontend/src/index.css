@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=SUIT:wght@400;600;700&display=swap');
+
+:root {
+  --ink: #0b1f2f;
+  --ink-soft: #456074;
+  --line: #c5d9db;
+  --panel: rgba(255, 255, 255, 0.88);
+  --accent: #0e7f84;
+  --head: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --body: 'SUIT', 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--body);
+  min-height: 100svh;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 220, 137, 0.52), transparent 38%),
+    radial-gradient(circle at 95% 8%, rgba(110, 220, 214, 0.43), transparent 32%),
+    linear-gradient(170deg, #f8fbf8, #eef4f7);
+}
