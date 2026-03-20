@@ -1,0 +1,63 @@
+# =========================
+# Node / React / pnpm
+# =========================
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+.pnpm-store/
+.npm/
+.yarn/
+
+vite.svg
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# env
+.python-version
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+# =========================
+# Misc
+# =========================
+*.log
